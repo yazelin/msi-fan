@@ -2,8 +2,6 @@
 
 MSI 筆電在 Ubuntu 上的風扇狀態檢視與控制。Tauri 2 + Rust。
 
-![](docs/screenshot.png)
-
 ## 這支能做什麼、不能做什麼
 
 先講清楚邊界，免得你期待落空：
