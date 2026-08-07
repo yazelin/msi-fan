@@ -95,7 +95,16 @@ systemctl --user enable --now msi-fan-auto
 
 設定檔在 `~/.config/msi-fan/config.json`，守護行程每秒重讀，改完不必重啟服務。
 
-預設值 `on_above=85 / off_below=72 / hold_secs=10`，並在啟用時把 `shift_mode` 設為 `turbo`。門檻的由來是上面那張實測表：turbo 常駐就把重載溫度壓在 66–71°C，85°C 已經算異常，才值得叫 Boost 出來。
+預設值 `on_above=85 / off_below=72 / hold_secs=10`。門檻的由來是上面那張實測表：
+turbo 常駐就把重載溫度壓在 66–71°C，85°C 已經算異常，才值得叫 Boost 出來。
+
+### 效能模式與自動 Boost 是分開的
+
+守護行程啟動時會把 `shift_mode` 套成設定檔裡的值（預設 `turbo`），**這件事跟 `enabled` 無關**——「開機就要 turbo」不該被迫連自動 Boost 一起開。
+
+在 GUI 裡按效能模式的按鈕，除了立刻生效之外也會寫進設定檔，所以「上次選的模式」就是下次開機要套用的模式。
+
+> EC 會不會自己保留 `shift_mode` 沒查證過，記在自己這邊才不必賭。
 
 ## 已知限制
 

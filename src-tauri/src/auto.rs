@@ -77,11 +77,17 @@ pub fn daemon() -> ! {
         let cfg = load(); // 每圈重讀，GUI 改設定後不必重啟服務
         let s = crate::ec::status();
 
-        if cfg.enabled && s.available && s.writable {
-            if !applied_shift && !cfg.shift_mode.is_empty() && s.shift_mode != cfg.shift_mode {
+        // 效能模式跟自動 Boost 是兩件事，不綁在一起：
+        // 「開機就套用 turbo」不該被迫連自動 Boost 一起開。
+        // 只在啟動時套一次，之後使用者從 GUI 手動改就尊重他的選擇。
+        if s.available && s.writable && !applied_shift && !cfg.shift_mode.is_empty() {
+            if s.shift_mode != cfg.shift_mode {
                 let _ = crate::ec::set("shift_mode", &cfg.shift_mode);
-                applied_shift = true;
             }
+            applied_shift = true;
+        }
+
+        if cfg.enabled && s.available && s.writable {
             let t = s.cpu_temp.max(s.gpu_temp);
             if t >= cfg.on_above {
                 over += 1;
@@ -103,7 +109,6 @@ pub fn daemon() -> ! {
         } else {
             over = 0;
             under = 0;
-            applied_shift = false;
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }

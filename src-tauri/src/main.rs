@@ -10,7 +10,15 @@ fn status() -> ec::Status {
 
 #[tauri::command]
 fn set(key: String, value: String) -> Result<(), String> {
-    ec::set(&key, &value)
+    ec::set(&key, &value)?;
+    // 記住使用者選的效能模式，開機時由守護行程套回去。
+    // EC 會不會自己保留這個設定沒查證過，記在自己這邊才不必賭。
+    if key == "shift_mode" {
+        let mut c = auto::load();
+        c.shift_mode = value;
+        let _ = auto::save(&c);
+    }
+    Ok(())
 }
 
 #[tauri::command]
