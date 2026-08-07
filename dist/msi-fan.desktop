@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=MSI Fan
+Comment=查看與控制 MSI 筆電的風扇與效能模式
+Exec=msi-fan
+Icon=msi-fan
+Terminal=false
+Categories=System;Monitor;Settings;

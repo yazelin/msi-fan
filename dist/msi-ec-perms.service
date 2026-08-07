@@ -1,0 +1,13 @@
+[Unit]
+Description=開放 msi-ec 的三個控制項給 msiec 群組，讓桌面程式不必用 root 跑
+After=systemd-modules-load.service
+ConditionPathExists=/sys/devices/platform/msi-ec
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# 只開放這三個，其餘維持 root-only
+ExecStart=/bin/sh -c 'cd /sys/devices/platform/msi-ec && chgrp msiec shift_mode fan_mode cooler_boost && chmod g+w shift_mode fan_mode cooler_boost'
+
+[Install]
+WantedBy=multi-user.target

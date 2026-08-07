@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MSI Fan</title>
+<style>
+  :root{
+    --bg:#12161c; --card:#1a212a; --line:#26303c;
+    --text:#e6edf5; --dim:#8a99ab;
+    --cool:#5ec8f0; --warm:#f0b429; --hot:#f06060; --ok:#5edc9a;
+    --r:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font:14px/1.55 "Noto Sans CJK TC","Noto Sans TC",system-ui,sans-serif;
+    padding:18px; -webkit-user-select:none; user-select:none;
+  }
+  h1{font-size:.75rem;letter-spacing:.18em;color:var(--dim);font-weight:600;margin-bottom:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px}
+
+  /* 溫度：兩個並排的大數字，顏色隨溫度變，一眼就知道現在燙不燙 */
+  .temps{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .t-item{text-align:center}
+  .t-lab{font-size:.7rem;letter-spacing:.14em;color:var(--dim)}
+  .t-val{font-size:2.6rem;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+  .t-val small{font-size:1rem;font-weight:500;color:var(--dim);margin-left:2px}
+  .t-sub{font-size:.72rem;color:var(--dim);margin-top:2px}
+
+  /* 風扇轉速條 */
+  .fan{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+  .fan-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+  .fan-rpm{font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums}
+  .fan-rpm small{font-size:.72rem;color:var(--dim);font-weight:500;margin-left:3px}
+  .bar{height:7px;background:#0d1218;border-radius:99px;overflow:hidden}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cool),var(--warm));
+         border-radius:99px;transition:width .5s ease}
+
+  .lab{font-size:.7rem;letter-spacing:.14em;color:var(--dim);margin-bottom:9px}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .seg button{
+    background:#0f151c;border:1px solid var(--line);color:var(--dim);
+    padding:9px 0;border-radius:9px;font:inherit;font-size:.86rem;cursor:pointer;
+    transition:all .18s ease;
+  }
+  .seg button:hover:not(:disabled){border-color:#3a4a5c;color:var(--text)}
+  .seg button[aria-pressed="true"]{background:var(--cool);border-color:var(--cool);color:#0b1218;font-weight:700}
+  .seg button:disabled{opacity:.4;cursor:not-allowed}
+
+  .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .row+.row{margin-top:12px}
+  .row .name{font-size:.9rem}
+  .row .hint{font-size:.72rem;color:var(--dim);margin-top:1px}
+
+  .sw{position:relative;width:46px;height:26px;flex:0 0 46px;background:#0f151c;
+      border:1px solid var(--line);border-radius:99px;cursor:pointer;transition:.2s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;
+             border-radius:50%;background:var(--dim);transition:.2s}
+  .sw[aria-pressed="true"]{background:var(--ok);border-color:var(--ok)}
+  .sw[aria-pressed="true"]::after{left:22px;background:#0b1218}
+  .sw:disabled{opacity:.4;cursor:not-allowed}
+
+  .nums{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
+  .nums label{font-size:.7rem;color:var(--dim);display:block;margin-bottom:4px}
+  .nums input{width:100%;background:#0f151c;border:1px solid var(--line);border-radius:8px;
+              color:var(--text);padding:7px 8px;font:inherit;font-variant-numeric:tabular-nums}
+  .nums input:focus{outline:2px solid var(--cool);outline-offset:1px}
+
+  .note{font-size:.72rem;color:var(--dim);line-height:1.6;margin-top:10px}
+  .warn{background:#2a1f14;border-color:#5a3f22;color:#f0c98a}
+  .warn a{color:var(--warm)}
+  code{background:#0d1218;padding:1px 5px;border-radius:4px;font-size:.85em;
+       -webkit-user-select:text;user-select:text}
+  .foot{font-size:.68rem;color:var(--dim);text-align:center;margin-top:14px;line-height:1.7}
+</style>
+</head>
+<body>
+  <h1>MSI FAN</h1>
+
+  <div class="card warn" id="warn" hidden>
+    <div id="warnText"></div>
+  </div>
+
+  <div class="card">
+    <div class="temps">
+      <div class="t-item">
+        <div class="t-lab">CPU</div>
+        <div class="t-val" id="cpuT">--<small>°C</small></div>
+      </div>
+      <div class="t-item">
+        <div class="t-lab">GPU</div>
+        <div class="t-val" id="gpuT">--<small>°C</small></div>
+      </div>
+    </div>
+    <div class="fan">
+      <div class="fan-top">
+        <span class="t-lab">風扇</span>
+        <span class="fan-rpm" id="rpm">--<small>RPM</small></span>
+      </div>
+      <div class="bar"><i id="fanBar" style="width:0%"></i></div>
+      <div class="t-sub" id="fanPct" style="text-align:right">--</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="lab">效能模式</div>
+    <div class="seg" id="shift"></div>
+    <div class="note">turbo 把風扇曲線的上限拉高，風扇仍是自動溫控。實測從 comfort 換成 turbo，重載溫度由 95–97°C 降到 66–71°C。</div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <div class="name">Cooler Boost</div>
+        <div class="hint">無條件全速，不受溫度控制，很吵</div>
+      </div>
+      <button class="sw" id="boost" aria-pressed="false" aria-label="Cooler Boost"></button>
+    </div>
+    <div class="row">
+      <div>
+        <div class="name">自動控制</div>
+        <div class="hint">依溫度自動開關 Boost，關掉視窗也繼續</div>
+      </div>
+      <button class="sw" id="autoOn" aria-pressed="false" aria-label="自動控制"></button>
+    </div>
+    <div class="nums">
+      <div><label>開啟門檻 °C</label><input type="number" id="onAbove" min="50" max="99"></div>
+      <div><label>關閉門檻 °C</label><input type="number" id="offBelow" min="40" max="95"></div>
+      <div><label>持續秒數</label><input type="number" id="holdSecs" min="3" max="120"></div>
+    </div>
+    <div class="note" id="autoNote">
+      兩個門檻之間是遲滯區，維持現狀不動作——只用單一門檻的話，溫度在門檻附近抖動會讓風扇每秒開開關關。
+    </div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+
+<script>
+const inv = (c,a) => window.__TAURI__.core.invoke(c,a);
+const $ = id => document.getElementById(id);
+
+let cfg = null, busy = false;
+
+const tempColor = t =>
+  t < 0 ? 'var(--dim)' : t >= 88 ? 'var(--hot)' : t >= 75 ? 'var(--warm)' : 'var(--cool)';
+
+function renderSeg(el, values, current, key, enabled){
+  if(el.dataset.built !== values.join(',')){
+    el.innerHTML = '';
+    for(const v of values){
+      const b = document.createElement('button');
+      b.textContent = v;
+      b.onclick = () => apply(key, v);
+      el.appendChild(b);
+    }
+    el.dataset.built = values.join(',');
+  }
+  [...el.children].forEach(b => {
+    b.setAttribute('aria-pressed', String(b.textContent === current));
+    b.disabled = !enabled;
+  });
+}
+
+async function apply(key, value){
+  if(busy) return;
+  busy = true;
+  try { await inv('set', {key, value}); }
+  catch(e){ showWarn(String(e)); }
+  busy = false;
+  refresh();
+}
+
+function showWarn(msg){
+  $('warn').hidden = false;
+  $('warnText').innerHTML = msg;
+}
+
+async function refresh(){
+  let s;
+  try { s = await inv('status'); } catch(e){ return; }
+
+  if(!s.available){
+    showWarn('找不到 <code>/sys/devices/platform/msi-ec</code>。請先安裝 msi-ec 模組，步驟見 README。');
+    return;
+  }
+  if(!s.writable){
+    showWarn('讀得到但寫不進去。需要把使用者加進 <code>msiec</code> 群組並安裝權限服務，'
+      + '而且<b>加入群組後要重新登入才會生效</b>。步驟見 README。');
+  } else {
+    $('warn').hidden = true;
+  }
+
+  $('cpuT').innerHTML = (s.cpu_temp<0?'--':s.cpu_temp) + '<small>°C</small>';
+  $('gpuT').innerHTML = (s.gpu_temp<0?'--':s.gpu_temp) + '<small>°C</small>';
+  $('cpuT').style.color = tempColor(s.cpu_temp);
+  $('gpuT').style.color = tempColor(s.gpu_temp);
+
+  $('rpm').innerHTML = (s.fan_rpm<0?'--':s.fan_rpm.toLocaleString()) + '<small>RPM</small>';
+  const pct = Math.max(s.cpu_fan_pct, s.gpu_fan_pct);
+  $('fanBar').style.width = (pct<0?0:pct) + '%';
+  $('fanPct').textContent = pct<0 ? '--' : pct + '%';
+
+  renderSeg($('shift'), s.shift_modes, s.shift_mode, 'shift_mode', s.writable);
+  $('boost').setAttribute('aria-pressed', String(s.cooler_boost === 'on'));
+  $('boost').disabled = !s.writable;
+
+  $('foot').innerHTML = `EC 韌體 ${s.fw_version} ・ fan_mode ${s.fan_mode}<br>`
+    + '硬體只提供模式切換與 Boost 開關，沒有指定轉速或自訂曲線的介面';
+}
+
+$('boost').onclick = () => {
+  const on = $('boost').getAttribute('aria-pressed') === 'true';
+  apply('cooler_boost', on ? 'off' : 'on');
+};
+
+async function saveCfg(){
+  cfg.enabled  = $('autoOn').getAttribute('aria-pressed') === 'true';
+  cfg.on_above = +$('onAbove').value;
+  cfg.off_below= +$('offBelow').value;
+  cfg.hold_secs= +$('holdSecs').value;
+  try {
+    await inv('set_config', {cfg});
+    $('autoNote').style.color = '';
+  } catch(e){
+    $('autoNote').style.color = 'var(--hot)';
+    $('autoNote').textContent = String(e);
+  }
+}
+
+$('autoOn').onclick = () => {
+  const on = $('autoOn').getAttribute('aria-pressed') === 'true';
+  $('autoOn').setAttribute('aria-pressed', String(!on));
+  saveCfg();
+};
+['onAbove','offBelow','holdSecs'].forEach(id => $(id).onchange = saveCfg);
+
+(async () => {
+  cfg = await inv('get_config');
+  $('autoOn').setAttribute('aria-pressed', String(cfg.enabled));
+  $('onAbove').value  = cfg.on_above;
+  $('offBelow').value = cfg.off_below;
+  $('holdSecs').value = cfg.hold_secs;
+  refresh();
+  setInterval(refresh, 1500);
+})();
+</script>
+</body>
+</html>
