@@ -9,6 +9,10 @@ mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/2
 # 先停、複製完再依原狀態決定要不要啟回來。
 WAS_ACTIVE=$(systemctl --user is-active msi-fan-auto 2>/dev/null || true)
 [ "$WAS_ACTIVE" = "active" ] && systemctl --user stop msi-fan-auto
+# GUI 開著一樣會讓 cp 拿到 Text file busy。pkill 是非同步的，要等它真的死透，
+# 不然 cp 會搶在行程結束前執行，錯誤訊息還是一樣。
+pkill -x msi-fan 2>/dev/null || true
+for _ in $(seq 20); do pgrep -x msi-fan >/dev/null || break; sleep 0.2; done
 cp src-tauri/target/release/msi-fan ~/.local/bin/
 cp dist/msi-fan.desktop ~/.local/share/applications/
 cp src-tauri/icons/256x256.png ~/.local/share/icons/hicolor/256x256/apps/msi-fan.png

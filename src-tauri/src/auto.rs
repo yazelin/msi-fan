@@ -54,6 +54,37 @@ pub fn load() -> Config {
         .unwrap_or_default()
 }
 
+const UNIT: &str = "msi-fan-auto";
+
+/// 服務現在真的在跑嗎。
+/// 這一格不能用設定檔的 `enabled` 代替：實測踩過一次，設定檔寫著 enabled=true、
+/// 服務其實是 inactive，介面顯示「自動控制：開」，結果 CPU 在 95°C 待了 45 秒
+/// 都沒有人去開 Boost。開關要對應真實狀態，不能對應「我曾經按過」。
+pub fn daemon_active() -> bool {
+    std::process::Command::new("systemctl")
+        .args(["--user", "is-active", "--quiet", UNIT])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// 讓「自動控制」開關真的生效：寫設定檔之外，也要開關 systemd 服務。
+/// enable/disable 帶 --now，這樣「下次開機」跟「現在」一起處理掉。
+pub fn set_daemon(on: bool) -> Result<(), String> {
+    let verb = if on { "enable" } else { "disable" };
+    let out = std::process::Command::new("systemctl")
+        .args(["--user", verb, "--now", UNIT])
+        .output()
+        .map_err(|e| format!("叫不動 systemctl：{e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "{verb} {UNIT} 失敗：{}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    ))
+}
+
 pub fn save(c: &Config) -> Result<(), String> {
     if c.off_below >= c.on_above {
         return Err("關閉門檻必須低於開啟門檻，否則會在門檻附近反覆開關".into());

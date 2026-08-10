@@ -21,9 +21,20 @@ pub struct Status {
     pub cooler_boost: String,
     pub cpu_temp: i32,
     pub gpu_temp: i32,
-    pub cpu_fan_pct: i32,
-    pub gpu_fan_pct: i32,
+    /// EC 0x71 / 0x89 的原始 byte。**不是百分比、也不是轉速。**
+    /// 實測（2026-08-10）：Boost 開關讓 RPM 在 6233↔2944 之間變動 2.4 倍，這兩個值紋風不動；
+    /// 切 turbo/eco 也不動；只有溫度跨過某個界線才跳一階（68°C 讀 60、67°C 以下讀 50）。
+    /// 看起來是「風扇曲線在當前溫度對應的那一階」，不是風扇現在的輸出。要看出力請用 fan_rpm。
+    pub cpu_fan_step: i32,
+    pub gpu_fan_step: i32,
     pub fan_rpm: i32,
+    /// NVMe 的 Composite 溫度，硬碟自己用來判斷降速的那一顆（不是最熱的那顆感測器）。
+    pub nvme_temp: i32,
+    /// 機器忙不忙。溫度高但這個低，代表不是散熱問題。
+    pub load1: f64,
+    pub cpu_threads: i32,
+    /// 獨顯使用率，抓不到就 -1（要靠 nvidia-smi，不保證存在）。
+    pub gpu_util: i32,
     pub shift_modes: Vec<String>,
     pub fan_modes: Vec<String>,
 }
@@ -45,7 +56,52 @@ fn read_list(rel: &str) -> Vec<String> {
         .collect()
 }
 
-/// 風扇轉速在 msi-ec 裡只有百分比，實際 RPM 要去 msi_wmi_platform 那支 hwmon 拿。
+/// 找出 hwmon 底下叫某個名字的那一支，回傳它的目錄。
+fn hwmon_dir(want: &str) -> Option<std::path::PathBuf> {
+    fs::read_dir(HWMON).ok()?.flatten().find_map(|e| {
+        let p = e.path();
+        (fs::read_to_string(p.join("name")).unwrap_or_default().trim() == want).then_some(p)
+    })
+}
+
+/// NVMe 溫度。**一定要用 Composite（temp1）**，那是硬碟自己拿來判斷要不要降速的值。
+/// 別用最熱的那顆：Sensor 2 是主控晶片，實測比 Composite 高 15°C，拿它嚇自己沒意義
+/// （2026-08-10 SMART 實查：Composite 57°C、警告門檻 77°C、累計超標時間 0 分鐘）。
+fn nvme_temp() -> i32 {
+    let Some(p) = hwmon_dir("nvme") else { return -1 };
+    fs::read_to_string(p.join("temp1_input"))
+        .ok()
+        .and_then(|v| v.trim().parse::<i32>().ok())
+        .map(|m| m / 1000)
+        .unwrap_or(-1)
+}
+
+/// 執行緒數，load 要跟它比才有意義（這台 i7-13620H 是 10 核 16 緒）。
+fn threads() -> i32 {
+    std::thread::available_parallelism().map_or(-1, |n| n.get() as i32)
+}
+
+/// 一分鐘平均負載。溫度高的時候，先看這個再決定要不要怪散熱。
+fn load1() -> f64 {
+    fs::read_to_string("/proc/loadavg")
+        .ok()
+        .and_then(|s| s.split_whitespace().next()?.parse().ok())
+        .unwrap_or(-1.0)
+}
+
+/// 獨顯使用率。要開子行程，所以做成 best-effort：沒有 nvidia-smi、逾時、看不懂都回 -1，
+/// 由 UI 顯示 `--`。這一格再有用也不值得讓整個狀態輪詢卡住。
+fn gpu_util() -> i32 {
+    std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
+        .unwrap_or(-1)
+}
+
+/// 風扇轉速。msi-ec 給的是不明刻度的原始值，真正的 RPM 要去 msi_wmi_platform 那支 hwmon 拿。
 fn fan_rpm() -> i32 {
     let Ok(dir) = fs::read_dir(HWMON) else { return -1 };
     for e in dir.flatten() {
@@ -83,9 +139,13 @@ pub fn status() -> Status {
             cooler_boost: String::new(),
             cpu_temp: -1,
             gpu_temp: -1,
-            cpu_fan_pct: -1,
-            gpu_fan_pct: -1,
+            cpu_fan_step: -1,
+            gpu_fan_step: -1,
             fan_rpm: -1,
+            nvme_temp: nvme_temp(),
+            load1: load1(),
+            cpu_threads: threads(),
+            gpu_util: -1,
             shift_modes: vec![],
             fan_modes: vec![],
         };
@@ -99,9 +159,13 @@ pub fn status() -> Status {
         cooler_boost: read("cooler_boost"),
         cpu_temp: read_i32("cpu/realtime_temperature"),
         gpu_temp: read_i32("gpu/realtime_temperature"),
-        cpu_fan_pct: read_i32("cpu/realtime_fan_speed"),
-        gpu_fan_pct: read_i32("gpu/realtime_fan_speed"),
+        cpu_fan_step: read_i32("cpu/realtime_fan_speed"),
+        gpu_fan_step: read_i32("gpu/realtime_fan_speed"),
         fan_rpm: fan_rpm(),
+        nvme_temp: nvme_temp(),
+        load1: load1(),
+        cpu_threads: threads(),
+        gpu_util: gpu_util(),
         shift_modes: read_list("available_shift_modes"),
         fan_modes: read_list("available_fan_modes"),
     }

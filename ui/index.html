@@ -98,8 +98,21 @@
         <span class="t-lab">風扇</span>
         <span class="fan-rpm" id="rpm">--<small>RPM</small></span>
       </div>
-      <div class="bar"><i id="fanBar" style="width:0%"></i></div>
-      <div class="t-sub" id="fanPct" style="text-align:right">--</div>
+      <div class="t-sub" id="fanSteps">--</div>
+    </div>
+    <div class="fan">
+      <div class="fan-top">
+        <span class="t-lab">SSD</span>
+        <span class="fan-rpm" id="ssdT">--<small>°C</small></span>
+      </div>
+      <div class="t-sub" id="ssdSub">--</div>
+    </div>
+    <div class="fan">
+      <div class="fan-top">
+        <span class="t-lab">忙不忙</span>
+        <span class="fan-rpm" id="busy">--</span>
+      </div>
+      <div class="t-sub" id="busySub">--</div>
     </div>
   </div>
 
@@ -197,15 +210,47 @@ async function refresh(){
   $('gpuT').style.color = tempColor(s.gpu_temp);
 
   $('rpm').innerHTML = (s.fan_rpm<0?'--':s.fan_rpm.toLocaleString()) + '<small>RPM</small>';
-  const pct = Math.max(s.cpu_fan_pct, s.gpu_fan_pct);
-  $('fanBar').style.width = (pct<0?0:pct) + '%';
-  $('fanPct').textContent = pct<0 ? '--' : pct + '%';
+  // 兩顆風扇分開列。只有 CPU 那顆讀得到 RPM，GPU 那顆只有 EC 值，
+  // 而 EC 值不是輸出強度（Boost 讓轉速差 2.4 倍時它動都不動），所以標成「曲線階」不標百分比。
+  $('fanSteps').textContent =
+    `曲線階　CPU ${s.cpu_fan_step<0?'--':s.cpu_fan_step}　GPU ${s.gpu_fan_step<0?'--':s.gpu_fan_step}`
+    + '（EC 原始值，非百分比；RPM 只有 CPU 風扇讀得到）';
+
+  const nv = s.nvme_temp;
+  $('ssdT').innerHTML = (nv<0?'--':nv) + '<small>°C</small>';
+  $('ssdT').style.color = nv<0 ? '' : (nv>=77 ? 'var(--hot)' : tempColor(nv - 20));
+  $('ssdSub').textContent = nv<0 ? '讀不到 NVMe 溫度'
+    : nv>=77 ? '已達警告門檻 77°C，硬碟可能降速'
+    : `Composite，警告門檻 77°C（還有 ${77-nv}°C 餘裕）`;
+
+  const l = s.load1, th = s.cpu_threads;
+  if (l<0 || th<0) { $('busy').textContent = '--'; $('busySub').textContent = ''; }
+  else {
+    const r = l/th;
+    const word = r<0.3 ? '閒' : r<0.7 ? '普通' : r<1 ? '忙' : '滿載排隊';
+    $('busy').textContent = word;
+    $('busy').style.color = r<0.7 ? 'var(--cool)' : r<1 ? 'var(--warm)' : 'var(--hot)';
+    const g = s.gpu_util<0 ? '' : `　獨顯 ${s.gpu_util}%`;
+    $('busySub').textContent = `${l.toFixed(2)} / ${th} 執行緒${g}`
+      + (r>=1 ? '　溫度高多半是這裡造成的，不是散熱壞了' : '');
+  }
 
   renderSeg($('shift'), s.shift_modes, s.shift_mode, 'shift_mode', s.writable);
   $('boost').setAttribute('aria-pressed', String(s.cooler_boost === 'on'));
   $('boost').disabled = !s.writable;
 
-  $('foot').innerHTML = `EC 韌體 ${s.fw_version} ・ fan_mode ${s.fan_mode}<br>`
+  // 自動控制的開關要對應「服務真的在跑嗎」，不是「設定檔寫什麼」。
+  // 兩者不一致時要講出來：踩過一次，介面顯示開著但沒人在跑，CPU 95°C 撐了 45 秒沒開 Boost。
+  const running = await inv('auto_running').catch(() => false);
+  $('autoOn').setAttribute('aria-pressed', String(running));
+  $('autoNote').style.color = (cfg && cfg.enabled && !running) ? 'var(--hot)' : '';
+  if (cfg && cfg.enabled && !running) {
+    $('autoNote').textContent = '設定檔說自動控制是開的，但背景服務沒在跑，現在沒有任何東西會幫你開 Boost。'
+      + '按一下開關重開，或跑 systemctl --user enable --now msi-fan-auto';
+  }
+
+  $('foot').innerHTML = `EC 韌體 ${s.fw_version} ・ fan_mode ${s.fan_mode}`
+    + ` ・ 自動控制${running ? '執行中' : '未執行'}<br>`
     + '硬體只提供模式切換與 Boost 開關，沒有指定轉速或自訂曲線的介面';
 }
 
@@ -237,7 +282,7 @@ $('autoOn').onclick = () => {
 
 (async () => {
   cfg = await inv('get_config');
-  $('autoOn').setAttribute('aria-pressed', String(cfg.enabled));
+  $('autoOn').setAttribute('aria-pressed', String(await inv('auto_running').catch(() => false)));
   $('onAbove').value  = cfg.on_above;
   $('offBelow').value = cfg.off_below;
   $('holdSecs').value = cfg.hold_secs;
